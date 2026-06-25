@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "azurerm" {
-    resource_group_name  = "final_kalthoum_rawan_prj"
+    resource_group_name  = "kalthoum_rawan_backend_rg"
     storage_account_name = "kalthoumrawantfstate"
     container_name       = "tfstate"
     key                  = "terraform.tfstate"
