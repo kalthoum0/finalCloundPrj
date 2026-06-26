@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudscale-app
+  labels:
+    app: cloudscale-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cloudscale-app
+  template:
+    metadata:
+      labels:
+        app: cloudscale-app
+    spec:
+      containers:
+        - name: cloudscale-app
+          image: kalthoumacr2026.azurecr.io/cloudscale-app:latest
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 20
