@@ -1,0 +1,82 @@
+name: CloudScale CI/CD Pipeline
+
+on:
+  push:
+    branches: ["**"]   # Build & test on every push
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: |
+          docker build -t cloudscale-app:${{ github.sha }} .
+
+      - name: Run Container
+        run: |
+          docker run -d --name app -p 8080:80 cloudscale-app:${{ github.sha }}
+
+      - name: Health Check
+        run: |
+          sleep 5
+          curl --fail http://localhost:8080/health
+
+      - name: Stop Container
+        run: |
+          docker stop app
+          docker rm app
+
+
+  push-to-acr:
+    needs: build-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image (for ACR)
+        run: |
+          docker build -t kalthoumacr2026.azurecr.io/cloudscale-app:${{ github.sha }} .
+          docker tag kalthoumacr2026.azurecr.io/cloudscale-app:${{ github.sha }} \
+                     kalthoumacr2026.azurecr.io/cloudscale-app:latest
+
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: kalthoumacr2026.azurecr.io
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Push Images
+        run: |
+          docker push kalthoumacr2026.azurecr.io/cloudscale-app:${{ github.sha }}
+          docker push kalthoumacr2026.azurecr.io/cloudscale-app:latest
+
+
+  deploy-to-aks:
+    needs: push-to-acr
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production   #  Manual approval gate happens HERE (GitHub setting required)
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          resource-group: final_kalthoum_rawan_prj
+          cluster-name: kalthoum-rawan-aks
+
+      - name: Deploy to AKS
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
