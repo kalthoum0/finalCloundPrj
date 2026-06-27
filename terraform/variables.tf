@@ -32,7 +32,7 @@ variable "node_count" {
 variable "vm_size" {
   description = "AKS VM Size"
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_B2s_V2"
 }
 
 variable "student_name" {
