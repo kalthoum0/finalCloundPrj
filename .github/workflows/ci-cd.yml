@@ -13,22 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Build & Local Test
         run: |
           docker build -t test-app:${{ github.sha }} .
           docker run -d --name test-container -p 8080:80 test-app:${{ github.sha }}
           sleep 5
           curl --fail http://localhost:8080/health
-        # Cleanup happens automatically when the GitHub actions runner destroys itself!
 
   terraform-plan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - uses: hashicorp/setup-terraform@v3
+
       - name: Terraform Plan
         working-directory: terraform
         run: |
@@ -73,10 +76,10 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - uses: hashicorp/setup-terraform@v3
+
       - name: Apply Infrastructure Changes
-        uses: hashicorp/setup-terraform@v3
-        with:
-          working-directory: terraform
+        working-directory: terraform
         run: |
           terraform init
           terraform apply -auto-approve
@@ -91,4 +94,4 @@ jobs:
         run: |
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
-          kubectl rollout status deployment/your-deployment-name-here # Better than just 'get pods'
+          kubectl rollout status deployment/your-deployment-name-here
