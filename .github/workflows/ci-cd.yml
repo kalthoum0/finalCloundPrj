@@ -2,86 +2,104 @@ name: CloudScale CI/CD Pipeline
 
 on:
   push:
-    branches: ["**"]   # Build & test on every push
+    branches:
+      - "**"
 
 jobs:
-
-  build-test:
+  # ----------------------------------------------------
+  # STAGE 1: VALIDATE (Runs in parallel on ALL branches)
+  # ----------------------------------------------------
+  app-test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Build Docker Image
+      - name: Build & Local Test
         run: |
-          docker build -t cloudscale-app:${{ github.sha }} .
-
-      - name: Run Container
-        run: |
-          docker run -d --name app -p 8080:80 cloudscale-app:${{ github.sha }}
-
-      - name: Health Check
-        run: |
+          docker build -t test-app:${{ github.sha }} .
+          docker run -d --name test-container -p 8080:80 test-app:${{ github.sha }}
           sleep 5
           curl --fail http://localhost:8080/health
 
-      - name: Stop Container
+  terraform-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Plan
+        working-directory: terraform
+        env:
+          TF_VAR_acr_name: ${{ secrets.REGISTRY_USERNAME}}
+          TF_VAR_subscription_id: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          # These are not sensitive, so they are perfectly safe to put here:
+          TF_VAR_resource_group_name: "final_kalthoum_rawan_prj"
+          TF_VAR_location: "switzerlandnorth" 
+          TF_VAR_aks_name: "kalthoum-rawan-aks"       
+          TF_VAR_student_name: "Kalthoum and Rawan"
         run: |
-          docker stop app
-          docker rm app
+          terraform init
+          terraform plan -input=false
 
-
-  push-to-acr:
-    needs: build-test
+  # ----------------------------------------------------
+  # STAGE 2: BUILD & PUSH (Only on main, after tests pass)
+  # ----------------------------------------------------
+  build-and-push:
+    needs: [app-test, terraform-plan]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Build Docker Image (ACR)
-        run: |
-          docker build -t kalthoumacr2026.azurecr.io/cloudscale-app:${{ github.sha }} .
-          docker tag kalthoumacr2026.azurecr.io/cloudscale-app:${{ github.sha }} \
-                     kalthoumacr2026.azurecr.io/cloudscale-app:latest
-
-      - name: Login to Azure Container Registry
+      - uses: actions/checkout@v4
+      
+      - name: Login to ACR
         uses: azure/docker-login@v1
         with:
           login-server: kalthoumacr2026.azurecr.io
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Push Images
+      - name: Build and Push
         run: |
+          docker build -t kalthoumacr2026.azurecr.io/cloudscale-app:${{ github.sha }} -t kalthoumacr2026.azurecr.io/cloudscale-app:latest .
           docker push kalthoumacr2026.azurecr.io/cloudscale-app:${{ github.sha }}
           docker push kalthoumacr2026.azurecr.io/cloudscale-app:latest
 
-
-  deploy-to-aks:
-    needs: push-to-acr
+  # ----------------------------------------------------
+  # STAGE 3: DEPLOY (Only on main, after image is ready)
+  # ----------------------------------------------------
+  deploy:
+    needs: build-and-push
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: production   # Manual approval gate (must be enabled in GitHub settings)
-
+    environment: production
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v2
+      - uses: actions/checkout@v4
+      
+      - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set AKS Context
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Apply Infrastructure Changes
+        working-directory: terraform
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+      - name: Deploy to AKS
         uses: azure/aks-set-context@v3
         with:
           resource-group: final_kalthoum_rawan_prj
           cluster-name: kalthoum-rawan-aks
 
-      - name: Deploy to AKS
+      - name: K8s Apply & Verify
         run: |
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment/your-deployment-name-here
