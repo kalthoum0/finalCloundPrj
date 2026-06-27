@@ -36,6 +36,12 @@ jobs:
         working-directory: terraform
         env:
           TF_VAR_acr_name: ${{ secrets.REGISTRY_USERNAME}}
+          TF_VAR_subscription_id: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          # These are not sensitive, so they are perfectly safe to put here:
+          TF_VAR_resource_group_name: "final_kalthoum_rawan_prj"
+          TF_VAR_location: "switzerlandnorth" 
+          TF_VAR_aks_name: "kalthoum-rawan-aks"       
+          TF_VAR_student_name: "Kalthoum and Rawan"
         run: |
           terraform init
           terraform plan -input=false
