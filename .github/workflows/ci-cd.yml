@@ -34,9 +34,11 @@ jobs:
 
       - name: Terraform Plan
         working-directory: terraform
+        env:
+          TF_VAR_acr_name: ${{ secrets.REGISTRY_USERNAME}}
         run: |
           terraform init
-          terraform plan
+          terraform plan -input=false
 
   # ----------------------------------------------------
   # STAGE 2: BUILD & PUSH (Only on main, after tests pass)
